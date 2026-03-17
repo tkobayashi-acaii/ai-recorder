@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>駅伝チームAIレコーダー</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;600;700&display=swap');
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Noto Sans JP', sans-serif;
+    min-height: 100dvh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #f0f2f5;
+    color: #333;
+    padding: 20px;
+  }
+
+  .card {
+    background: #fff;
+    border-radius: 20px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.08);
+    padding: 40px 32px;
+    width: 100%;
+    max-width: 440px;
+    text-align: center;
+  }
+
+  .title {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: #1a73e8;
+    margin-bottom: 24px;
+  }
+
+  /* ---- Record button ---- */
+  .rec-btn {
+    width: 96px;
+    height: 96px;
+    border-radius: 50%;
+    border: none;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: #1a73e8;
+    color: #fff;
+    box-shadow: 0 4px 16px rgba(26,115,232,0.35);
+    transition: transform 0.15s, box-shadow 0.15s, background 0.3s;
+    position: relative;
+  }
+  .rec-btn:active { transform: scale(0.93); }
+  .rec-btn:disabled {
+    background: #bbb;
+    box-shadow: none;
+    cursor: not-allowed;
+  }
+  .rec-btn svg { width: 36px; height: 36px; fill: currentColor; }
+
+  /* recording state */
+  .rec-btn.recording {
+    background: #ea4335;
+    box-shadow: 0 0 0 0 rgba(234,67,53,0.5);
+    animation: ring 1.8s ease-out infinite;
+  }
+  @keyframes ring {
+    0%   { box-shadow: 0 0 0 0 rgba(234,67,53,0.45); }
+    70%  { box-shadow: 0 0 0 18px rgba(234,67,53,0); }
+    100% { box-shadow: 0 0 0 0 rgba(234,67,53,0); }
+  }
+
+  /* ---- Timer ---- */
+  .timer {
+    font-size: 2rem;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    margin: 16px 0 4px;
+    font-variant-numeric: tabular-nums;
+    color: #444;
+    min-height: 2.5rem;
+  }
+
+  /* ---- Status ---- */
+  .status {
+    font-size: 0.9rem;
+    color: #888;
+    min-height: 1.4rem;
+    margin-bottom: 6px;
+  }
+
+  /* ---- Progress bar (during upload/AI) ---- */
+  .progress-wrap {
+    height: 4px;
+    background: #e0e0e0;
+    border-radius: 2px;
+    margin: 12px 0 0;
+    overflow: hidden;
+    display: none;
+  }
+  .progress-wrap.active { display: block; }
+  .progress-bar {
+    height: 100%;
+    width: 0%;
+    background: #1a73e8;
+    border-radius: 2px;
+    animation: indeterminate 1.6s ease-in-out infinite;
+  }
+  @keyframes indeterminate {
+    0%   { width: 0%;  margin-left: 0; }
+    50%  { width: 60%; margin-left: 20%; }
+    100% { width: 0%;  margin-left: 100%; }
+  }
+
+  /* ---- Result ---- */
+  .result {
+    display: none;
+    margin-top: 24px;
+    text-align: left;
+    background: #e8f0fe;
+    padding: 20px;
+    border-radius: 12px;
+    border-left: 5px solid #1a73e8;
+    font-size: 0.95rem;
+    line-height: 1.75;
+    animation: fadeUp 0.4s ease;
+  }
+  .result.show { display: block; }
+  .result-head {
+    font-weight: 700;
+    color: #1a73e8;
+    margin-bottom: 8px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid #d0e1fd;
+  }
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(12px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  /* ---- Error ---- */
+  .error {
+    display: none;
+    margin-top: 16px;
+    padding: 14px;
+    background: #fce8e6;
+    border-radius: 10px;
+    border-left: 5px solid #ea4335;
+    color: #c5221f;
+    font-size: 0.9rem;
+    text-align: left;
+  }
+  .error.show { display: block; }
+
+  /* ---- Config banner ---- */
+  .config-banner {
+    display: none;
+    background: #fff3cd;
+    border: 1px solid #ffc107;
+    border-radius: 10px;
+    padding: 16px;
+    margin-bottom: 20px;
+    font-size: 0.85rem;
+    color: #856404;
+    text-align: left;
+    line-height: 1.6;
+  }
+  .config-banner.show { display: block; }
+  .config-banner code {
+    background: #ffeeba;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 0.82rem;
+    word-break: break-all;
+  }
+</style>
+</head>
+<body>
+
+<div class="card">
+  <!-- ★ GAS WebアプリURLが未設定の場合に表示 -->
+  <div class="config-banner" id="configBanner">
+    ⚠️ <strong>初期設定が必要です。</strong><br>
+    このHTMLファイルの <code>GAS_WEB_APP_URL</code> を、GASデプロイ後に取得したURLに書き換えてください。
+  </div>
+
+  <div class="title">🎙️ 駅伝チームAIレコーダー（テスト版）</div>
+
+  <button class="rec-btn" id="recBtn" onclick="toggleRecording()">
+    <!-- mic icon (default) -->
+    <svg id="iconMic" viewBox="0 0 24 24"><path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3zm-1-9a1 1 0 1 1 2 0v6a1 1 0 1 1-2 0V5zm6 6a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2z"/></svg>
+    <!-- stop icon (recording) -->
+    <svg id="iconStop" style="display:none" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
+  </button>
+
+  <div class="timer" id="timer"></div>
+  <div class="status" id="status">タップして録音開始</div>
+
+  <div class="progress-wrap" id="progress">
+    <div class="progress-bar"></div>
+  </div>
+
+  <div class="result" id="result">
+    <div class="result-head">✨ AI要約速報</div>
+    <div id="summaryText"></div>
+  </div>
+
+  <div class="error" id="error"></div>
+</div>
+
+<script>
+// =============================================================
+// ★★★ ここにGASのWebアプリURL（デプロイ後に取得）を貼り付け ★★★
+// =============================================================
+const GAS_WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbyG5jn-JBF25PXNeIJLaH6zlVWet6rQ_Lh6A4CDJ-4oUwPoyQtgLDXasEDEwkeq2F88Ew/exec';
+// =============================================================
+
+let mediaRecorder = null;
+let audioChunks = [];
+let timerInterval = null;
+let startTime = 0;
+
+const recBtn    = document.getElementById('recBtn');
+const iconMic   = document.getElementById('iconMic');
+const iconStop  = document.getElementById('iconStop');
+const timerEl   = document.getElementById('timer');
+const statusEl  = document.getElementById('status');
+const progressEl= document.getElementById('progress');
+const resultEl  = document.getElementById('result');
+const errorEl   = document.getElementById('error');
+
+// 設定チェック
+if (GAS_WEB_APP_URL.includes('ここに')) {
+  document.getElementById('configBanner').classList.add('show');
+}
+
+// ---- 録音トグル ----
+async function toggleRecording() {
+  if (mediaRecorder && mediaRecorder.state === 'recording') {
+    stopRecording();
+  } else {
+    await startRecording();
+  }
+}
+
+async function startRecording() {
+  try {
+    errorEl.classList.remove('show');
+    resultEl.classList.remove('show');
+
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    mediaRecorder = new MediaRecorder(stream);
+    audioChunks = [];
+
+    mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
+    mediaRecorder.onstop = () => {
+      // マイクのトラックを停止（ブラウザのマイクインジケーターを消す）
+      stream.getTracks().forEach(t => t.stop());
+      sendToGas();
+    };
+
+    mediaRecorder.start();
+
+    // UI更新
+    recBtn.classList.add('recording');
+    iconMic.style.display = 'none';
+    iconStop.style.display = 'block';
+    statusEl.textContent = '録音中…';
+    startTime = Date.now();
+    timerEl.textContent = '00:00';
+    timerInterval = setInterval(updateTimer, 500);
+
+  } catch (err) {
+    showError('マイクへのアクセスが拒否されました。ブラウザの設定でマイクを許可してください。');
+  }
+}
+
+function stopRecording() {
+  if (mediaRecorder && mediaRecorder.state === 'recording') {
+    mediaRecorder.stop();
+  }
+  clearInterval(timerInterval);
+
+  // UI: 処理中状態
+  recBtn.classList.remove('recording');
+  recBtn.disabled = true;
+  iconMic.style.display = 'block';
+  iconStop.style.display = 'none';
+  statusEl.textContent = 'AIが内容を分析しています…';
+  progressEl.classList.add('active');
+}
+
+// ---- GASへ送信 ----
+function sendToGas() {
+  const blob = new Blob(audioChunks, { type: 'audio/webm' });
+  const reader = new FileReader();
+  reader.readAsDataURL(blob);
+  reader.onloadend = async function () {
+    const base64Data = reader.result;
+    const filename = 'recording_' + new Date().toISOString().replace(/[:.]/g, '-') + '.mp3';
+
+    try {
+      const res = await fetch(GAS_WEB_APP_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify({
+          audioData: base64Data,
+          filename: filename
+        })
+      });
+
+      // GAS doPost はリダイレクトを挟む場合があるので、
+      // レスポンスのテキストをそのままパースする
+      const text = await res.text();
+      let result;
+      try {
+        result = JSON.parse(text);
+      } catch (_) {
+        throw new Error('GASからの応答が不正です: ' + text.substring(0, 200));
+      }
+
+      if (result.success) {
+        onSuccess(result);
+      } else {
+        showError('GAS側エラー: ' + (result.error || '不明なエラー'));
+      }
+    } catch (err) {
+      showError('通信エラー: ' + err.message);
+    }
+  };
+}
+
+// ---- 結果表示 ----
+function onSuccess(result) {
+  resetUI();
+  statusEl.textContent = '✅ 保存完了！';
+  document.getElementById('summaryText').textContent = result.shortSummary;
+  resultEl.classList.add('show');
+}
+
+function showError(msg) {
+  resetUI();
+  statusEl.textContent = '';
+  errorEl.textContent = msg;
+  errorEl.classList.add('show');
+}
+
+function resetUI() {
+  recBtn.disabled = false;
+  recBtn.classList.remove('recording');
+  iconMic.style.display = 'block';
+  iconStop.style.display = 'none';
+  progressEl.classList.remove('active');
+}
+
+// ---- タイマー ----
+function updateTimer() {
+  const elapsed = Math.floor((Date.now() - startTime) / 1000);
+  const m = String(Math.floor(elapsed / 60)).padStart(2, '0');
+  const s = String(elapsed % 60).padStart(2, '0');
+  timerEl.textContent = m + ':' + s;
+}
+</script>
+</body>
+</html>
